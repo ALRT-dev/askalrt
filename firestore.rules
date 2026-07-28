@@ -129,5 +129,13 @@ service cloud.firestore {
       allow read: if isSelf(uid);
       allow write: if false;              // askAlrt increments it server-side
     }
+
+    // ----- Ask ALRT answer library: readable by the app; edited in Console --
+    // The function reads it via the admin SDK (bypasses rules). Sarah edits it
+    // in the Firebase Console. No client writes.
+    match /askAlrtEntries/{entryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

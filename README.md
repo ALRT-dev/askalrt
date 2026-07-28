@@ -86,9 +86,23 @@ emergency-lookup answers never count against it.
   **no transcript logging** — only content-free counts (§18 privacy).
 - The assistant **cannot see the live feed** — the app must pass any alert facts
   in `context`; the prompt forbids inventing others.
-- **Editing answers without a release:** the seed library lives in code today;
-  move it to a Firestore collection / Remote Config and merge over the seed when
-  you want to add answers without shipping a build.
+### Editing answers without an app release
+
+The seed library ships in code as a permanent fallback; **Firestore overrides
+merge over it**, so you can add/edit answers from the Firebase Console with no
+build. Collection `askAlrtEntries`, one document per answer:
+
+| Field | Type | Notes |
+|---|---|---|
+| (document id) | — | Reuse a seed id (e.g. `pricing`) to edit that answer; a new id adds a new one |
+| `triggers` | array of strings | Phrases that should surface this answer (a phrase hit is a strong match) |
+| `keywords` | array of strings | Single words; several overlapping words also match |
+| `answer` | string | The exact text shown to the user |
+| `enabled` | boolean | Set `false` to hide a seed answer |
+
+Merge/validation is in `askalrt/entriesLoader.ts` (unit-tested); the library is
+cached ~5 minutes, so edits take effect within a few minutes. A malformed doc is
+ignored and the seed answer is kept.
 
 ## Deploy prerequisites (pass 2 & 3)
 

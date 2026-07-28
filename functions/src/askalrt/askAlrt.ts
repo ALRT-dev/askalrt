@@ -18,7 +18,7 @@ import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 import Anthropic from "@anthropic-ai/sdk";
 import { ASK_ALRT_SYSTEM_PROMPT } from "./systemPrompt";
-import { KNOWLEDGE_BASE } from "./entries";
+import { loadEntries } from "./entriesLoader";
 import { bestMatch, detectEmergencyLookup } from "./matching";
 import { EMERGENCY_NUMBERS } from "../lib/emergencyLogic";
 
@@ -122,8 +122,9 @@ export const askAlrt = onCall(
     if (!question) throw new HttpsError("invalid-argument", "A question is required.");
     if (question.length > MAX_QUESTION_CHARS) throw new HttpsError("invalid-argument", "Question is too long.");
 
-    // 1. Pre-written library (no AI, no quota).
-    const match = bestMatch(question, KNOWLEDGE_BASE);
+    // 1. Pre-written library (no AI, no quota). Seed + Firestore overrides.
+    const entries = await loadEntries();
+    const match = bestMatch(question, entries);
     if (match) {
       logger.info("ask_alrt_answered", { uid, source: "library" as Source, entry: match.entry.id });
       return { answer: match.entry.answer, source: "library" as Source, usedAI: false };
