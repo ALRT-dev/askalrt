@@ -1,19 +1,16 @@
 /**
- * Ask ALRT — the assistant backend (spec → working feature).
+ * Ask ALRT — library-first assistant (minimise AI).
  *
- * A callable endpoint that takes the user's question plus optional per-request
- * context (the resolved emergency number, a nearby-alerts summary, language),
- * sends it to Claude with the Ask ALRT system prompt, and returns the answer.
+ * Answer order:
+ *   1. Pre-written library (matching.ts + entries.ts) — ZERO AI, unlimited.
+ *   2. Emergency-number lookup from the resolved table — ZERO AI, unlimited.
+ *   3. AI fallback (claude-haiku-4-5) — only for the long tail, and rate limited
+ *      to 3/day (free) or 20/day (ALRT+). This is the only path that spends money
+ *      or the daily quota.
  *
- * Design choices tied to the locked product rules:
- *  - The assistant CANNOT see the live feed. Any alert facts must be passed in
- *    by the app as `context`; the prompt forbids inventing others (§ stay in lane).
- *  - The emergency number is region-resolved by the app (§16) and passed in, not
- *    hardcoded. It is injected as a second system block AFTER the cached prompt.
- *  - Privacy (§18 voice posture): the question/answer text is NEVER logged. Only
- *    a content-free daily usage counter and an analytics count are kept.
- *  - Rate limiting via agentUsage/{uid}/{yyyymmdd} (firestore-data-model §1).
- *  - App Check enforced (firestore-data-model §3: App Check on callables).
+ * Locked-rule enforcement carried over: App Check required, refusal handling,
+ * no transcript logging (content-free counts only, §18), the assistant cannot
+ * see the live feed (alert facts must be passed in as `context`).
  */
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -21,30 +18,45 @@ import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 import Anthropic from "@anthropic-ai/sdk";
 import { ASK_ALRT_SYSTEM_PROMPT } from "./systemPrompt";
+import { KNOWLEDGE_BASE } from "./entries";
+import { bestMatch, detectEmergencyLookup } from "./matching";
+import { EMERGENCY_NUMBERS } from "../lib/emergencyLogic";
 
-/** Set with: firebase functions:secrets:set ANTHROPIC_API_KEY */
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
-
 const db = () => admin.firestore();
 
-const MODEL = "claude-opus-5";
-const MAX_TOKENS = 1500;
-/** Free daily question cap per user (tune in Remote Config later). */
-const DAILY_LIMIT = 40;
+/** Cheapest model — the library handles the common questions; AI is the tail. */
+const MODEL = "claude-haiku-4-5";
+const MAX_TOKENS = 1000;
+
+/** Daily AI-question caps. Canned/library answers do NOT count. */
+export const AI_DAILY_LIMIT = { free: 3, plus: 20 } as const;
+
 const MAX_QUESTION_CHARS = 2000;
 const MAX_HISTORY_TURNS = 10;
 
+/** Display names for the zero-AI emergency lookup. */
+const ISO_NAMES: Record<string, string> = {
+  AU: "Australia",
+  NZ: "New Zealand",
+  GB: "the United Kingdom",
+  US: "the United States",
+  CA: "Canada",
+  IE: "Ireland",
+  FR: "France",
+  DE: "Germany",
+};
+
 interface AskRequest {
   question: string;
-  /** Prior turns for context; capped and trimmed. */
   history?: { role: "user" | "assistant"; content: string }[];
-  /** Region-resolved emergency number for the user (§16). */
   emergencyNumber?: string;
-  /** App-supplied summary of nearby alerts (the assistant can't see the feed). */
   context?: string;
-  /** BCP-47 language to answer in, e.g. "en", "zh-Hans". */
   language?: string;
 }
+
+type Plan = "free" | "plus";
+type Source = "library" | "emergency_lookup" | "ai";
 
 function yyyymmdd(d: Date): string {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(
@@ -52,20 +64,37 @@ function yyyymmdd(d: Date): string {
   ).padStart(2, "0")}`;
 }
 
-/** Atomic daily rate-limit check + increment. Throws resource-exhausted at cap. */
-async function enforceRateLimit(uid: string): Promise<void> {
+async function planFor(uid: string): Promise<Plan> {
+  const ent = await db().collection("entitlements").doc(uid).get();
+  return (ent.data()?.plan as Plan | undefined) === "plus" ? "plus" : "free";
+}
+
+/** Atomic AI-quota check + increment. Throws resource-exhausted at the cap. */
+async function consumeAiQuota(uid: string, plan: Plan): Promise<void> {
+  const limit = AI_DAILY_LIMIT[plan];
   const ref = db().collection("agentUsage").doc(uid).collection("days").doc(yyyymmdd(new Date()));
   await db().runTransaction(async (txn) => {
     const snap = await txn.get(ref);
-    const count = (snap.data()?.count as number | undefined) ?? 0;
-    if (count >= DAILY_LIMIT) {
-      throw new HttpsError("resource-exhausted", "Daily Ask ALRT limit reached. Try again tomorrow.");
+    const count = (snap.data()?.aiCount as number | undefined) ?? 0;
+    if (count >= limit) {
+      throw new HttpsError(
+        "resource-exhausted",
+        plan === "plus"
+          ? "You have reached today's limit of 20 assistant questions. Try again tomorrow."
+          : "You have reached today's limit of 3 assistant questions. ALRT+ raises this to 20 per day."
+      );
     }
-    txn.set(ref, { count: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    txn.set(ref, { aiCount: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
   });
 }
 
-/** Build the per-request context block (kept OUT of the cached system prefix). */
+function emergencyAnswer(iso: string): string | null {
+  const number = EMERGENCY_NUMBERS[iso];
+  if (!number) return null;
+  const name = ISO_NAMES[iso] ?? iso;
+  return `In ${name}, the emergency number is ${number}. If you are in danger, call it now. ALRT is a helper, it does not contact emergency services for you.`;
+}
+
 function contextBlock(data: AskRequest): string {
   const lines = ["Context for this question (not shown to the user):"];
   lines.push(
@@ -91,11 +120,28 @@ export const askAlrt = onCall(
     const data = request.data as AskRequest;
     const question = (data?.question ?? "").trim();
     if (!question) throw new HttpsError("invalid-argument", "A question is required.");
-    if (question.length > MAX_QUESTION_CHARS) {
-      throw new HttpsError("invalid-argument", "Question is too long.");
+    if (question.length > MAX_QUESTION_CHARS) throw new HttpsError("invalid-argument", "Question is too long.");
+
+    // 1. Pre-written library (no AI, no quota).
+    const match = bestMatch(question, KNOWLEDGE_BASE);
+    if (match) {
+      logger.info("ask_alrt_answered", { uid, source: "library" as Source, entry: match.entry.id });
+      return { answer: match.entry.answer, source: "library" as Source, usedAI: false };
     }
 
-    await enforceRateLimit(uid);
+    // 2. Emergency-number lookup from the resolved table (no AI, no quota).
+    const lookup = detectEmergencyLookup(question);
+    if (lookup) {
+      const answer = emergencyAnswer(lookup.iso);
+      if (answer) {
+        logger.info("ask_alrt_answered", { uid, source: "emergency_lookup" as Source, iso: lookup.iso });
+        return { answer, source: "emergency_lookup" as Source, usedAI: false };
+      }
+    }
+
+    // 3. AI fallback — the only path that costs money or the daily quota.
+    const plan = await planFor(uid);
+    await consumeAiQuota(uid, plan);
 
     const history = (data.history ?? [])
       .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
@@ -109,28 +155,25 @@ export const askAlrt = onCall(
         model: MODEL,
         max_tokens: MAX_TOKENS,
         system: [
-          // Block 1: stable prompt — cached across requests (prefix match).
           { type: "text", text: ASK_ALRT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-          // Block 2: volatile per-request context — sits AFTER the cache breakpoint.
           { type: "text", text: contextBlock(data) },
         ],
         messages: [...history, { role: "user", content: question }],
       });
     } catch (err) {
-      // Never log question/answer content; log only the error shape.
       logger.error("Ask ALRT model call failed", { uid, error: (err as Error).message });
       throw new HttpsError("internal", "Ask ALRT is unavailable right now. Please try again.");
     }
 
-    // Opus 5 safety classifiers can decline: check stop_reason before reading content.
     if (response.stop_reason === "refusal") {
-      // stop_details is populated on refusals; not yet in this SDK's base typings.
       const category =
         (response as { stop_details?: { category?: string | null } }).stop_details?.category ?? null;
-      logger.info("Ask ALRT refusal", { uid, category });
+      logger.info("ask_alrt_refusal", { uid, category });
       return {
         answer:
           "I can't help with that one. If you're in danger, call your local emergency services now. For anything else about using ALRT, email contact@safetyalrt.com.",
+        source: "ai" as Source,
+        usedAI: true,
         refused: true,
       };
     }
@@ -141,9 +184,7 @@ export const askAlrt = onCall(
       .join("")
       .trim();
 
-    // Content-free analytics only (§18): count, never transcript.
-    logger.info("agent_question", { uid, chars: question.length });
-
-    return { answer, refused: false };
+    logger.info("ask_alrt_answered", { uid, source: "ai" as Source, plan });
+    return { answer, source: "ai" as Source, usedAI: true, refused: false };
   }
 );

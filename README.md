@@ -64,21 +64,31 @@ functions/
   test/         Jest unit tests for every lib/* module (no emulator needed)
 ```
 
-## Pass 3 — Ask ALRT assistant (§ ask-alrt-system-prompt)
+## Pass 3 — Ask ALRT assistant (library-first, minimal AI)
 
-`askAlrt` is a callable endpoint that turns the handoff's system prompt into a
-working assistant. It sends the user's question + the (region-resolved)
-emergency number + any app-supplied alert context to `claude-opus-5` with the
-Ask ALRT system prompt, and returns the answer.
+`askAlrt` answers in three tiers, using AI as little as possible:
+
+1. **Pre-written library** (`askalrt/entries.ts` + `matching.ts`) — a keyword/
+   phrase matcher answers common questions with ZERO AI. Unlimited, no quota.
+2. **Emergency-number lookup** — country + intent detected locally and answered
+   from the resolved number table. ZERO AI, unlimited.
+3. **AI fallback** (`claude-haiku-4-5`, the cheapest model) — only the long tail
+   that tiers 1–2 miss. This is the **only** path that spends money or the quota.
+
+**AI-question limits:** 3/day free, 20/day ALRT+ (`AI_DAILY_LIMIT` in
+`askAlrt.ts`; counted in `agentUsage/{uid}/days/{yyyymmdd}.aiCount`). Library and
+emergency-lookup answers never count against it.
 
 - The **system prompt was tightened**: the hardcoded "000 in Australia" is gone
   (the emergency number is passed in per request per §16), and an explicit
   "no en-dashes" output rule was added (§9). See `askalrt/systemPrompt.ts`.
-- Structurally enforced safety rules: **App Check** required, **daily rate limit**
-  (`agentUsage/{uid}/days/{yyyymmdd}`), **refusal handling** (`stop_reason`), and
-  **no transcript logging** — only a content-free question count (§18 privacy).
+- Enforced: **App Check** required, **refusal handling** (`stop_reason`), and
+  **no transcript logging** — only content-free counts (§18 privacy).
 - The assistant **cannot see the live feed** — the app must pass any alert facts
   in `context`; the prompt forbids inventing others.
+- **Editing answers without a release:** the seed library lives in code today;
+  move it to a Firestore collection / Remote Config and merge over the seed when
+  you want to add answers without shipping a build.
 
 ## Deploy prerequisites (pass 2 & 3)
 
