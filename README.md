@@ -64,13 +64,35 @@ functions/
   test/         Jest unit tests for every lib/* module (no emulator needed)
 ```
 
-## Deploy prerequisites (pass 2)
+## Pass 3 — Ask ALRT assistant (§ ask-alrt-system-prompt)
+
+`askAlrt` is a callable endpoint that turns the handoff's system prompt into a
+working assistant. It sends the user's question + the (region-resolved)
+emergency number + any app-supplied alert context to `claude-opus-5` with the
+Ask ALRT system prompt, and returns the answer.
+
+- The **system prompt was tightened**: the hardcoded "000 in Australia" is gone
+  (the emergency number is passed in per request per §16), and an explicit
+  "no en-dashes" output rule was added (§9). See `askalrt/systemPrompt.ts`.
+- Structurally enforced safety rules: **App Check** required, **daily rate limit**
+  (`agentUsage/{uid}/days/{yyyymmdd}`), **refusal handling** (`stop_reason`), and
+  **no transcript logging** — only a content-free question count (§18 privacy).
+- The assistant **cannot see the live feed** — the app must pass any alert facts
+  in `context`; the prompt forbids inventing others.
+
+## Deploy prerequisites (pass 2 & 3)
 
 - **RevenueCat secret** — the webhook checks the `Authorization` header:
   ```bash
   firebase functions:secrets:set REVENUECAT_AUTH
   ```
   then set the same value as the Authorization header in the RevenueCat dashboard.
+- **Anthropic API key** — for Ask ALRT:
+  ```bash
+  firebase functions:secrets:set ANTHROPIC_API_KEY
+  ```
+  Model is `claude-opus-5`; the system prompt is prompt-cached, so repeat
+  questions are cheaper. App Check must be configured for the app to call it.
 - **Firestore TTL** — the 60-min snapshot delete and 4h live-share expiry rely on
   a TTL policy, not code. Enable TTL on `snapshots` `expiresAt` (and optionally
   `liveShareSessions` `expiresAt`) via console or:

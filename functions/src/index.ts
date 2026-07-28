@@ -18,3 +18,6 @@ export { onSnapshotWrite } from "./snapshots";
 export { onSosStart, onSosEnd, autoStopExpiredLiveShares } from "./sos";
 export { revenuecatWebhook } from "./entitlements";
 export { enforceSavedLocationLimit, enforceSeatLimit } from "./limits";
+
+// --- Pass 3: Ask ALRT assistant ---------------------------------------------
+export { askAlrt } from "./askalrt/askAlrt";

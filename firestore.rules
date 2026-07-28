@@ -123,5 +123,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;              // ingested server-side only
     }
+
+    // ----- Ask ALRT usage: own daily count, Cloud Function writes only ---
+    match /agentUsage/{uid}/days/{day} {
+      allow read: if isSelf(uid);
+      allow write: if false;              // askAlrt increments it server-side
+    }
   }
 }

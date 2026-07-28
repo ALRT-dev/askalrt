@@ -2,7 +2,9 @@
   "name": "alrt-backend-v2-updates",
   "version": "1.0.0",
   "description": "ALRT V2 reconciliation backend: XP v1.1 + family-sharing 2-state model",
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "20"
+  },
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",
@@ -12,6 +14,7 @@
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
     "firebase-admin": "^12.6.0",
     "firebase-functions": "^6.1.0"
   },
