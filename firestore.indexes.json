@@ -1,0 +1,24 @@
+{
+  "indexes": [
+    {
+      "//": "autoStopExpiredLiveShares: collection-group scan of live sessions past expiry",
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "expiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "onSnapshotWrite: active official ACTION/CRITICAL alerts",
+      "collectionGroup": "alerts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "tier", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
