@@ -1,23 +1,19 @@
 /**
- * ALRT V2 backend — function exports.
+ * Ask ALRT — function exports.
  *
- * Pass 1 (reconciliation): XP v1.1 + family-sharing 2-state model.
- * Pass 2 (core safety): SOS lifecycle, snapshot proximity, entitlements, limits.
+ * This package hosts ONLY the Ask ALRT assistant and its supporting
+ * entitlement webhook. The app's backend (hazards, family, SOS, XP,
+ * sharing, proximity) is the REST service in `ALRT-dev/backendV2`
+ * (api.safetyalrt.com) — the earlier duplicate implementations of those
+ * domains were removed from this repo in the Aug 2026 repo audit.
  */
 import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
-// --- Pass 1: reconciliation items -------------------------------------------
-export { onCorroborationWrite } from "./corroboration";
-export { guardLiveShareWrite } from "./sharingGuard";
-export { awardXp } from "./xpAward";
-
-// --- Pass 2: core safety functions (§2) -------------------------------------
-export { onSnapshotWrite } from "./snapshots";
-export { onSosStart, onSosEnd, autoStopExpiredLiveShares } from "./sos";
+// RevenueCat → entitlements/{uid} (plan free/plus). Used here only to pick
+// the Ask ALRT daily quota (3 free / 20 paid).
 export { revenuecatWebhook } from "./entitlements";
-export { enforceSavedLocationLimit, enforceSeatLimit } from "./limits";
 
-// --- Pass 3: Ask ALRT assistant ---------------------------------------------
+// Ask ALRT assistant (library-first, minimal AI).
 export { askAlrt } from "./askalrt/askAlrt";

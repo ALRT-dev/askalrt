@@ -1,26 +1,7 @@
 {
-  "//": "Remote Config defaults (§8 kill-switches, §32 proximity, §16 emergency numbers). Deploy with: firebase deploy --only remoteconfig",
+  "//": "Remote Config defaults for the Ask ALRT assistant. Deploy with: firebase deploy --only remoteconfig",
   "parameters": {
-    "chrome_dark_glass": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "family_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "sos_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "live_share_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "agent_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "paywall_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "watch_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "layers_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" },
-    "grouping_all_paid": { "defaultValue": { "value": "false" }, "valueType": "BOOLEAN" },
-    "list_radius_km": { "defaultValue": { "value": "10" }, "valueType": "NUMBER" },
-    "proximity_radii": {
-      "defaultValue": { "value": "{\"moving\":5,\"area\":3,\"static\":1}" },
-      "valueType": "JSON"
-    },
-    "emergency_numbers": {
-      "defaultValue": {
-        "value": "{\"AU\":\"000\",\"NZ\":\"111\",\"GB\":\"999\",\"US\":\"911\",\"CA\":\"911\",\"IE\":\"112\",\"FR\":\"112\",\"DE\":\"112\"}"
-      },
-      "valueType": "JSON"
-    }
+    "agent_enabled": { "defaultValue": { "value": "true" }, "valueType": "BOOLEAN" }
   },
   "parameterGroups": {},
   "conditions": []

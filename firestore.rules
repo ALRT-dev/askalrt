@@ -4,124 +4,14 @@ service cloud.firestore {
 
     function isSignedIn() { return request.auth != null; }
     function isSelf(uid) { return isSignedIn() && request.auth.uid == uid; }
-    function isMember(circleId) {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/memberships/$(circleId)/members/$(request.auth.uid));
-    }
 
-    // ----- XP & profile: PRIVATE, own-user-only, NO LEADERBOARD -----------
-    // Rankable cross-user reads are impossible: a user can only ever read
-    // their own profile and their own xpEvents. There is no public XP
-    // projection collection, and collection-group reads are not granted.
-    match /users/{uid} {
-      allow read: if isSelf(uid);          // own profile only — never another user's
-      // XP/level/badges/counters are written ONLY by Cloud Functions (admin
-      // SDK bypasses rules). Clients may create/patch non-scored profile
-      // fields but may never write scoring fields.
-      allow create, update: if isSelf(uid)
-        && !request.resource.data.diff(resource.data == null ? {} : resource.data)
-              .affectedKeys()
-              .hasAny(['xpTotal','level','badges','corroborationsReceived','accurateReports']);
-      allow delete: if false;
-    }
-
-    match /xpEvents/{uid}/events/{eventId} {
-      allow read: if isSelf(uid);          // own ledger only
-      allow write: if false;               // Cloud Functions only
-    }
-
-    // ----- Snapshots: state 1 of 2 (single point, 60-min TTL) -------------
-    match /snapshots/{circleId}/items/{snapId} {
-      allow read: if isMember(circleId);
-      // Create only your own snapshot, with a valid source. No client updates
-      // (a snapshot never mutates/extends). Deletion is via TTL policy only.
-      allow create: if isSelf(request.resource.data.uid)
-        && isMember(circleId)
-        && request.resource.data.source in ['checkin','request','sos'];
-      allow update, delete: if false;
-    }
-
-    // ----- Live share: state 2 of 2 (SOS-only, single doc, 4h cap) --------
-    // Existence implies an active SOS. Must be bound to an sosId and carry
-    // mode == 'sos_live'. Any 'continuous'/'persistent' person tracking is
-    // structurally unrepresentable here and additionally deleted by
-    // guardLiveShareWrite.
-    match /liveShareSessions/{circleId}/sessions/{sosId} {
-      allow read: if isMember(circleId);
-      allow create, update: if isSelf(request.resource.data.uid)
-        && isMember(circleId)
-        && request.resource.data.mode == 'sos_live'
-        && request.resource.data.sosId == sosId
-        && request.resource.data.expiresAt is timestamp;
-      allow delete: if isSelf(resource.data.uid) || isMember(circleId);
-    }
-
-    // Corroboration confirms: members write their own "yes" vote; the confirm
-    // itself earns no XP (enforced in code). Reports' scored fields
-    // (confirmCount / *Awarded) are Cloud-Function only.
-    match /corroborations/{reportId}/confirms/{uid} {
-      allow read: if isSignedIn();
-      allow create, delete: if isSelf(uid);
-      allow update: if false;
-    }
-    match /reports/{reportId} {
-      allow read: if isSignedIn();
-      allow create: if isSelf(request.resource.data.authorUid);
-      // Author may edit their own report body, but never the scored fields.
-      allow update: if isSelf(resource.data.authorUid)
-        && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['confirmCount','corroboratedAwarded','widelyAwarded','authorUid']);
-      allow delete: if false;
-    }
+    // This project hosts only the Ask ALRT assistant. The app's backend
+    // (hazards, family, SOS, XP, sharing) is ALRT-dev/backendV2.
 
     // ----- Entitlements: written ONLY by the RevenueCat webhook -----------
     match /entitlements/{uid} {
       allow read: if isSelf(uid);
       allow write: if false;              // Cloud Function (webhook) only
-    }
-
-    // ----- Circles & memberships -----------------------------------------
-    match /circles/{circleId} {
-      allow read: if isMember(circleId);
-      allow create: if isSelf(request.resource.data.hostUid);
-      // Only the host may edit circle settings; plan/seat fields are function-only.
-      allow update: if isSignedIn() && resource.data.hostUid == request.auth.uid
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan']);
-      allow delete: if isSignedIn() && resource.data.hostUid == request.auth.uid;
-    }
-    match /memberships/{circleId}/members/{memberUid} {
-      allow read: if isMember(circleId);
-      // Join writes your own membership; seat cap is a function backstop.
-      allow create: if isSelf(memberUid);
-      allow update: if isSelf(memberUid);
-      // Leave yourself, or the host removes a member.
-      allow delete: if isSelf(memberUid) ||
-        get(/databases/$(database)/documents/circles/$(circleId)).data.hostUid == request.auth.uid;
-    }
-
-    // ----- SOS events: append acknowledgements; immutable after end ------
-    match /sosEvents/{circleId}/events/{sosId} {
-      allow read: if isMember(circleId);
-      allow create: if isSelf(request.resource.data.uid) && isMember(circleId);
-      // Members may add their ack or end the event; nothing changes once ended.
-      allow update: if isMember(circleId) && resource.data.endedAt == null;
-      allow delete: if false;
-    }
-
-    // ----- Saved locations: own only; free cap is a function backstop -----
-    match /savedLocations/{uid}/items/{locId} {
-      allow read, create, update, delete: if isSelf(uid);
-    }
-
-    // ----- Push tokens: own only -----------------------------------------
-    match /pushTokens/{uid} {
-      allow read, write: if isSelf(uid);
-    }
-
-    // ----- Alerts: read-only projection for signed-in users --------------
-    match /alerts/{alertId} {
-      allow read: if isSignedIn();
-      allow write: if false;              // ingested server-side only
     }
 
     // ----- Ask ALRT usage: own daily count, Cloud Function writes only ---
