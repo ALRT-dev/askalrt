@@ -111,6 +111,71 @@ export const KNOWLEDGE_BASE: readonly KnowledgeEntry[] = [
       "You are notified for serious official warnings near you (Watch and Act or Emergency level). Community reports and lower level advice show in your list and on the map but do not buzz your phone.",
   },
   {
+    id: "alert_shapes",
+    triggers: [
+      "what do the shapes mean",
+      "what does the triangle mean",
+      "what does the diamond mean",
+      "what does the circle mean",
+      "what does the shield mean",
+      "what are the symbols",
+    ],
+    keywords: ["shape", "shapes", "triangle", "diamond", "circle", "shield", "symbol", "icon"],
+    answer:
+      "The shape tells you who issued the alert. Triangle: an AWS warning from the Australian Warning System, the only source that states a level in words (Advice, Watch and Act, Emergency Warning). Diamond: an official source such as a state agency or service. Circle: a community report from a person nearby, unverified. Shield: from ALRT itself. The full key is on the map under the layers button.",
+  },
+  {
+    id: "alert_colours",
+    triggers: [
+      "what do the colours mean",
+      "what do the colors mean",
+      "what does the red alert mean",
+      "what does orange mean",
+      "what does yellow mean",
+      "severity levels",
+    ],
+    keywords: ["colour", "color", "red", "orange", "yellow", "grey", "band", "severity", "urgent", "critical"],
+    answer:
+      "Colour tells you how urgent an alert is. Grey is Info, awareness only. Yellow is Monitor, stay across it. Orange is Action, do something now. Red is Critical, the highest level, and only official critical alerts fill solid red. Community reports are the exception: their circle wears the category colour (for example blue for weather), not an urgency colour.",
+  },
+  {
+    id: "alert_types",
+    triggers: [
+      "what types of alerts",
+      "what kinds of alerts",
+      "what alerts are there",
+      "alert categories",
+    ],
+    keywords: ["types", "kinds", "categories", "weather", "health", "security", "traffic", "utilities"],
+    answer:
+      "Alerts come from three sources: AWS warnings (triangles), official agencies (diamonds), and community reports (circles). Every alert also belongs to a category: Weather, Health, Security, Traffic, Utilities, Community, or Other. You can filter which sources show on the map from the layers button, and pick which categories notify you in Notifications settings.",
+  },
+  {
+    id: "aws_levels",
+    triggers: [
+      "what is aws",
+      "what is watch and act",
+      "what is an emergency warning",
+      "what is an advice level",
+      "australian warning system",
+    ],
+    keywords: ["aws", "advice", "watch", "act", "emergency", "warning", "level"],
+    answer:
+      "AWS is the Australian Warning System, the national three level warning scale. Advice means an incident is happening, stay informed. Watch and Act means conditions are changing, take action to protect yourself. Emergency Warning is the highest level, you may be in danger and need to act immediately. In ALRT, AWS alerts are triangles and are the only alerts that write their level in words.",
+  },
+  {
+    id: "community_reports",
+    triggers: [
+      "can i trust community reports",
+      "what is a community report",
+      "who posts community alerts",
+      "unverified alert",
+    ],
+    keywords: ["community", "report", "unverified", "trust", "confirm", "dispute"],
+    answer:
+      "A community report (a circle on the map) is posted by a person nearby through the app and is unverified. Others nearby can confirm or dispute it, which you can see on the report. Treat it as a heads-up, not an official warning, and check official alerts for the confirmed picture. You can post one yourself from the ALRT button in the footer.",
+  },
+  {
     id: "emergency_generic",
     triggers: ["what number do i call", "emergency services", "who do i call in an emergency"],
     keywords: ["emergency", "call", "help"],
