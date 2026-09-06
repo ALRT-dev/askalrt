@@ -30,7 +30,7 @@ const MODEL = "claude-haiku-4-5";
 const MAX_TOKENS = 1000;
 
 /** Daily AI-question caps. Canned/library answers do NOT count. */
-export const AI_DAILY_LIMIT = { free: 3, plus: 20 } as const;
+export const AI_DAILY_LIMIT = { free: 5, plus: 30 } as const;
 
 const MAX_QUESTION_CHARS = 2000;
 const MAX_HISTORY_TURNS = 10;
@@ -64,9 +64,28 @@ function yyyymmdd(d: Date): string {
   ).padStart(2, "0")}`;
 }
 
+/**
+ * The plan implied by an entitlements/{uid} document's own data — this is
+ * the one place the RevenueCat-fed entitlement (§ separate webhook,
+ * entitlements.ts) turns into an Ask ALRT quota tier. Anything other than
+ * an explicit "plus" reads as free, so a missing document (never
+ * subscribed) and a lapsed one (webhook wrote back "free") are both
+ * treated the same, safe way.
+ */
+export function planFromEntitlementData(data: { plan?: string } | undefined): Plan {
+  return data?.plan === "plus" ? "plus" : "free";
+}
+
 async function planFor(uid: string): Promise<Plan> {
   const ent = await db().collection("entitlements").doc(uid).get();
-  return (ent.data()?.plan as Plan | undefined) === "plus" ? "plus" : "free";
+  return planFromEntitlementData(ent.data());
+}
+
+/** The resource-exhausted message shown at the cap, for either plan. */
+export function quotaExceededMessage(plan: Plan): string {
+  return plan === "plus"
+    ? `You have reached today's limit of ${AI_DAILY_LIMIT.plus} assistant questions. Try again tomorrow.`
+    : `You have reached today's limit of ${AI_DAILY_LIMIT.free} assistant questions. ALRT+ raises this to ${AI_DAILY_LIMIT.plus} per day.`;
 }
 
 /** Atomic AI-quota check + increment. Throws resource-exhausted at the cap. */
@@ -77,12 +96,7 @@ async function consumeAiQuota(uid: string, plan: Plan): Promise<void> {
     const snap = await txn.get(ref);
     const count = (snap.data()?.aiCount as number | undefined) ?? 0;
     if (count >= limit) {
-      throw new HttpsError(
-        "resource-exhausted",
-        plan === "plus"
-          ? "You have reached today's limit of 20 assistant questions. Try again tomorrow."
-          : "You have reached today's limit of 3 assistant questions. ALRT+ raises this to 20 per day."
-      );
+      throw new HttpsError("resource-exhausted", quotaExceededMessage(plan));
     }
     txn.set(ref, { aiCount: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
   });
